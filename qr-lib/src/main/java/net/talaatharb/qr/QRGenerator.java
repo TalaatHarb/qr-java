@@ -104,16 +104,21 @@ public class QRGenerator {
 	}
 
 	static final boolean isReservedArea(int row, int col) {
-		return ((row >= 0 && row <= 6 && col >= 0 && col <= 6) || // Top-left
-				(row >= 0 && row <= 6 && col >= MATRIX_SIZE - 7) || // Top-right
-				(row >= MATRIX_SIZE - 7 && row < MATRIX_SIZE && col >= 0 && col <= 6));
+		return (
+				(row >= 0 && row <= 7 && col >= 0 && col <= 7) || // Top-left
+				(row >= 0 && row <= 7 && col >= MATRIX_SIZE - 8) || // Top-right
+				(row >= MATRIX_SIZE - 8 && row < MATRIX_SIZE && col >= 0 && col <= 7) ||
+				(row == 6 && col >= 8 && col < MATRIX_SIZE - 8 ) ||
+				(col == 6 && row >= 8 && row < MATRIX_SIZE - 8)
+				);
 	}
 
 	static final int[][] applyMask(int maskPattern, int[][] qrMatrix) {
 		for (int row = 0; row < MATRIX_SIZE; row++) {
 			for (int col = 0; col < MATRIX_SIZE; col++) {
-				if (isReservedArea(row, col))
-					continue; // Skip reserved areas
+				if (isReservedArea(row, col)) {
+                    continue;
+                }
 
 				// Apply the chosen mask pattern
 				boolean shouldFlip = shouldFlipBit(maskPattern, row, col);
@@ -162,7 +167,8 @@ public class QRGenerator {
 	}
 
 	static final int[][] applyMask(int[][] qrMatrix) {
-		return applyMask(4, qrMatrix); // TODO perform mask evaluation
+		// TODO perform mask evaluation
+		return applyMask(4, qrMatrix); 
 	}
 
 	static final int[][] placeDataInMatrix(byte[] finalData) {
@@ -226,20 +232,31 @@ public class QRGenerator {
     }
 
     static final void fillFinderPattern(int startRow, int startCol, int[][] qrMatrix) {
-        for (int row = 0; row < 7; row++) {
-            for (int col = 0; col < 7; col++) {
-                // Set the modules for the finder pattern
-                if ((row == 0 || row == 6 || col == 0 || col == 6) || (row >= 2 && row <= 4 && col >= 2 && col <= 4)) {
-                    qrMatrix[startRow + row][startCol + col] = 1; // Black module
-                } else {
-                    qrMatrix[startRow + row][startCol + col] = 0; // White module
+    	// Add a white border around the 7x7 finder pattern (4-module-wide quiet zone)
+        for (int row = -4; row < 11; row++) {
+            for (int col = -4; col < 11; col++) {
+                int r = startRow + row;
+                int c = startCol + col;
+                if (r >= 0 && r < MATRIX_SIZE && c >= 0 && c < MATRIX_SIZE) {
+                    if (row >= 0 && row < 7 && col >= 0 && col < 7) {
+                        // Inside the finder pattern
+                        if ((row == 0 || row == 6 || col == 0 || col == 6) || (row >= 2 && row <= 4 && col >= 2 && col <= 4)) {
+                            qrMatrix[r][c] = 1; // Black module
+                        } else {
+                            qrMatrix[r][c] = 0; // White module
+                        }
+                    } else {
+                        // Outside the 7x7 area (quiet zone) -> White border
+                        qrMatrix[r][c] = 0;
+                    }
                 }
             }
         }
+        
     }
 
     static final void fillTimingPatterns(int[][] qrMatrix) {
-        for (int i = 8; i < MATRIX_SIZE - 8; i++) {
+    	for (int i = 8; i < MATRIX_SIZE - 8; i++) {
             qrMatrix[6][i] = (i % 2 == 0) ? 1 : 0; // Horizontal timing pattern
             qrMatrix[i][6] = (i % 2 == 0) ? 1 : 0; // Vertical timing pattern
         }

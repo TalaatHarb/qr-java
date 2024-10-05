@@ -22,7 +22,7 @@ public class QRApplication {
 		startTime = System.nanoTime();
 		
 		QRRenderer renderer = new QRRenderer(generatedQR);
-		renderer.render("./tmp/QR.png");
+		renderer.render("../tmp/QR.png");
 		
 		period = (System.nanoTime() - startTime) / NANO_TO_S;
 		
