@@ -60,7 +60,7 @@ public class QRGenerator {
 			if (i + 1 < length) {
 				// Two characters to encode
 				int value = (charToValueMap.get(input.charAt(i)) * 45) + charToValueMap.get(input.charAt(i + 1));
-				String encodedValue = String.format("%011d", Integer.parseInt(Integer.toBinaryString(value), 2));
+				String encodedValue = String.format("%011d", Long.parseLong(Integer.toBinaryString(value)));
 				encoded.append(encodedValue);
 			} else {
 				// Last character (odd case)
