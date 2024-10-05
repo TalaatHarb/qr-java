@@ -12,11 +12,14 @@ public class QRRenderer {
 	
 	public void render(String path) {
 		log.info("Rendering QR code to image: {}", path);
+		StringBuilder builder = new StringBuilder(System.lineSeparator());
+		builder.append(System.lineSeparator());
 		for (int row = 0; row < MATRIX_SIZE; row++) {
 			for (int col = 0; col < MATRIX_SIZE; col++) {
-				System.out.print(qr[row][col] == 1 ? "█" : " "); // Print black and white squares
+				builder.append(qr[row][col] == 1 ? "█" : " "); // Print black and white squares
 			}
-			System.out.println();
+			builder.append(System.lineSeparator());
 		}
+		log.info(builder.toString());
 	}
 }

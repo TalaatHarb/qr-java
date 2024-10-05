@@ -12,8 +12,7 @@ public class QRApplication {
 		
 		long startTime = System.nanoTime();
 		
-		QRGenerator generator = new QRGenerator(text);
-		var generatedQR = generator.generate();
+		var generatedQR = QRGenerator.generate(text);
 		
 		double period = (System.nanoTime() - startTime) / NANO_TO_S;
 		

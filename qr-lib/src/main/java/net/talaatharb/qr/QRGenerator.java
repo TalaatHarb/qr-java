@@ -1,19 +1,19 @@
 package net.talaatharb.qr;
 
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
-import lombok.RequiredArgsConstructor;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
-@RequiredArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class QRGenerator {
 
-	private static final String MODE_INDICATOR = "0010"; // Alphanumeric mode
-	private static final Integer CODE_WORD_COUNT = 7; // L
-	private static final int MATRIX_SIZE = 21; // 21x21 for Version 1
+	static final String MODE_INDICATOR = "0010"; // Alphanumeric mode
+	static final Integer CODE_WORD_COUNT = 7; // L
+	static final int MATRIX_SIZE = 21; // 21x21 for Version 1
 
 	private static final String ALPHANUMERIC_CHARSET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
 	private static final Map<Character, Integer> charToValueMap = new HashMap<>();
@@ -25,33 +25,25 @@ public class QRGenerator {
 		}
 	}
 
-	private final String text;
-	private String encodedData;
-	private byte[] dataBits;
-	private byte[] dataBitsWithEC;
-	private int[][] maskedData;
-
-	public int[][] generate() {
+	public static final int[][] generate(String text) {
 		log.info("Generating QR for the text: {}", text);
-		if (isValidInput()) {
-			encodedData = encodeAlphanumeric();
-			dataBits = dataBits();
-			dataBitsWithEC = addErrorCorrection();
-
+		if (isValidInput(text)) {
+			var encodedData = encodeAlphanumeric(text);
+			var dataBits = dataBits(encodedData);
+			var dataBitsWithEC = addErrorCorrection(dataBits);
 			var qrMatrix = placeDataInMatrix(dataBitsWithEC);
-			maskedData = applyMask(4, qrMatrix);
-			return maskedData;
+			return applyMask(qrMatrix);
 		} else {
 			throw new UnsupportedOperationException("Not valid input");
 		}
 
 	}
 
-	boolean isValidInput() {
-		return true;
+	static final boolean isValidInput(String text) {
+		return text != null && text.length() < 25 && text.length() > 0;
 	}
 
-	String encodeAlphanumeric() {
+	static final String encodeAlphanumeric(String text) {
 		StringBuilder encoded = new StringBuilder();
 
 		// Start with mode indicator for alphanumeric (0010)
@@ -81,7 +73,7 @@ public class QRGenerator {
 		return encoded.toString();
 	}
 
-	byte[] dataBits() {
+	static final byte[] dataBits(String encodedData) {
 		int length = encodedData.length();
 		byte[] bits = new byte[(length + 7) / 8]; // 8 bits per byte
 
@@ -95,11 +87,11 @@ public class QRGenerator {
 		return bits;
 	}
 
-	byte[] generateErrorCorrectionCodewords(byte[] data, int numCodewords) {
+	static final byte[] generateErrorCorrectionCodewords(byte[] data, int numCodewords) {
 		return ReedSolomon.generateErrorCorrectionCodewords(data, numCodewords);
 	}
 
-	byte[] addErrorCorrection() {
+	static final byte[] addErrorCorrection(byte[] dataBits) {
 		// Generate error correction codewords
 		byte[] ecCodewords = generateErrorCorrectionCodewords(dataBits, CODE_WORD_COUNT);
 
@@ -111,13 +103,13 @@ public class QRGenerator {
 		return combined;
 	}
 
-	boolean isReservedArea(int row, int col) {
+	static final boolean isReservedArea(int row, int col) {
 		return ((row >= 0 && row <= 6 && col >= 0 && col <= 6) || // Top-left
 				(row >= 0 && row <= 6 && col >= MATRIX_SIZE - 7) || // Top-right
 				(row >= MATRIX_SIZE - 7 && row < MATRIX_SIZE && col >= 0 && col <= 6));
 	}
 
-	int[][] applyMask(int maskPattern, int[][] qrMatrix) {
+	static final int[][] applyMask(int maskPattern, int[][] qrMatrix) {
 		for (int row = 0; row < MATRIX_SIZE; row++) {
 			for (int col = 0; col < MATRIX_SIZE; col++) {
 				if (isReservedArea(row, col))
@@ -135,7 +127,7 @@ public class QRGenerator {
 		return qrMatrix;
 	}
 
-	boolean shouldFlipBit(int maskPattern, int row, int col) {
+	static final boolean shouldFlipBit(int maskPattern, int row, int col) {
 		boolean shouldFlip = false;
 
 		switch (maskPattern) {
@@ -169,15 +161,14 @@ public class QRGenerator {
 		return shouldFlip;
 	}
 
-	byte[] applyMask() {
-		return text.getBytes(StandardCharsets.US_ASCII);
+	static final int[][] applyMask(int[][] qrMatrix) {
+		return applyMask(4, qrMatrix); // TODO perform mask evaluation
 	}
 
-	int[][] placeDataInMatrix(byte[] finalData) {
+	static final int[][] placeDataInMatrix(byte[] finalData) {
 		int dataIndex = 0; // Index for the current data bit
 		int bitIndex = 7; // Start with the highest bit (byte) for finalData
 		int[][] qrMatrix = new int[MATRIX_SIZE][MATRIX_SIZE];
-		fillReservedAreas(qrMatrix);
 		// Start from the bottom-right corner of the matrix
 		for (int col = MATRIX_SIZE - 1; col >= 0; col -= 2) { // Iterate through columns (two at a time)
 			for (int row = 0; row < MATRIX_SIZE; row++) {
@@ -220,10 +211,11 @@ public class QRGenerator {
 				}
 			}
 		}
+		fillReservedAreas(qrMatrix);
 		return qrMatrix;
 	}
     
-    static void fillReservedAreas(int[][] qrMatrix) {
+    static final void fillReservedAreas(int[][] qrMatrix) {
         // Fill finder patterns
         fillFinderPattern(0, 0, qrMatrix); // Top-left
         fillFinderPattern(0, MATRIX_SIZE - 7, qrMatrix); // Top-right
@@ -233,7 +225,7 @@ public class QRGenerator {
         fillTimingPatterns(qrMatrix);
     }
 
-    static void fillFinderPattern(int startRow, int startCol, int[][] qrMatrix) {
+    static final void fillFinderPattern(int startRow, int startCol, int[][] qrMatrix) {
         for (int row = 0; row < 7; row++) {
             for (int col = 0; col < 7; col++) {
                 // Set the modules for the finder pattern
@@ -246,7 +238,7 @@ public class QRGenerator {
         }
     }
 
-    static void fillTimingPatterns(int[][] qrMatrix) {
+    static final void fillTimingPatterns(int[][] qrMatrix) {
         for (int i = 8; i < MATRIX_SIZE - 8; i++) {
             qrMatrix[6][i] = (i % 2 == 0) ? 1 : 0; // Horizontal timing pattern
             qrMatrix[i][6] = (i % 2 == 0) ? 1 : 0; // Vertical timing pattern
