@@ -8,7 +8,7 @@ public class QRApplication {
 	private static final double NANO_TO_S = 1000000000.0;
 
 	public static void main(String[] args) {
-		String text = "Hello, World!";
+		String text = "Hello World";
 		
 		long startTime = System.nanoTime();
 		
