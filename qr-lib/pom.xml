@@ -6,7 +6,7 @@
 	<artifactId>qr-lib</artifactId>
 	<name>qr-lib</name>
 
-        <parent>
+	<parent>
 		<groupId>net.talaatharb</groupId>
 		<artifactId>qr-java</artifactId>
 		<version>0.0.1-SNAPSHOT</version>
@@ -29,6 +29,10 @@
 			<artifactId>junit-platform-suite</artifactId>
 			<scope>test</scope>
 		</dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-params</artifactId>
+		</dependency>
 
 		<dependency>
 			<groupId>org.mockito</groupId>
@@ -43,5 +47,5 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
-	
+
 </project>

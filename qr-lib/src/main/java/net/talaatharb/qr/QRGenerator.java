@@ -52,7 +52,7 @@ public class QRGenerator {
 		// Append character count indicator (10 bits for character count)
 		int length = text.length();
 		String input = text.toUpperCase();
-		String charCountIndicator = String.format("%010d", Integer.parseInt(Integer.toBinaryString(length)));
+		String charCountIndicator = String.format("%09d", Integer.parseInt(Integer.toBinaryString(length)));
 		encoded.append(charCountIndicator);
 
 		// Encode the data
