@@ -43,8 +43,7 @@ public class QRGenerator {
 		var encodedData = encodeAlphanumeric(text);
 		var dataBits = dataBits(encodedData);
 		var paddedDataBits = padDataBits(dataBits, encodedData.length(), DATABITS_SIZE);
-		var dataBitsWithEC = addErrorCorrection(paddedDataBits);
-		return dataBitsWithEC;
+		return addErrorCorrection(paddedDataBits);
 	}
 
 	static final boolean isValidInput(String text) {
@@ -193,8 +192,7 @@ public class QRGenerator {
 	}
 
 	static final boolean isReservedArea(int row, int col) {
-		return (
-				(row >= 0 && row <= 7 && col >= 0 && col <= 7) || // Top-left
+		return ((row >= 0 && row <= 7 && col >= 0 && col <= 7) || // Top-left
 				(row >= 0 && row <= 7 && col >= MATRIX_SIZE - 8) || // Top-right
 				(row >= MATRIX_SIZE - 8 && row < MATRIX_SIZE && col >= 0 && col <= 7) || // Bottom-left
 				(row == 6 && col >= 8 && col < MATRIX_SIZE - 8) || // Horizontal timing
@@ -209,7 +207,7 @@ public class QRGenerator {
 		var appliedMask = new int[matrixSize][matrixSize];
 		for (int row = 0; row < matrixSize; row++) {
 			for (int col = 0; col < matrixSize; col++) {
-				
+
 				if (isReserved.test(row, col)) {
 					appliedMask[row][col] = qrMatrix[row][col];
 					continue;
@@ -220,7 +218,7 @@ public class QRGenerator {
 				}
 			}
 		}
-		
+
 		return appliedMask;
 	}
 
@@ -229,23 +227,27 @@ public class QRGenerator {
 	static final void addErrorCorrectionAndMaskInfo(int errorCorrectionLevel, int maskPattern, int[][] qrMatrix) {
 		int formatBits = calculateFormatBits(errorCorrectionLevel, maskPattern);
 
-		// Place format bits near the top-left finder pattern
+		// Place format bits around the top-left finder pattern
 		for (int i = 0; i < 6; i++) {
-			qrMatrix[i][8] = (formatBits >> i) & 1; // Vertical
-			qrMatrix[8][i] = (formatBits >> i) & 1; // Horizontal
+			qrMatrix[i][8] = (formatBits >> i) & 1; // Vertical near top-left
+			qrMatrix[8][i] = (formatBits >> i) & 1; // Horizontal near top-left
 		}
 
-		qrMatrix[7][8] = (formatBits >> 6) & 1; // In the "dark module" position
-		qrMatrix[8][7] = (formatBits >> 7) & 1;
+		// Place format bits at the dark module and the crossing of timing patterns
+		qrMatrix[8][7] = (formatBits >> 6) & 1; // Special module (always format bit 7)
+		qrMatrix[7][8] = (formatBits >> 7) & 1; // This is usually part of the timing pattern
+
+		// The dark module (fixed to 1, by QR specification)
+		qrMatrix[8][8] = 1;
 
 		// Top-right format information
 		for (int i = 0; i < 7; i++) {
-			qrMatrix[8][MATRIX_SIZE - 1 - i] = (formatBits >> (8 + i)) & 1; // Horizontal part
+			qrMatrix[8][MATRIX_SIZE - 1 - i] = (formatBits >> (i + 8)) & 1; // Horizontal near top-right
 		}
 
 		// Bottom-left format information
 		for (int i = 0; i < 7; i++) {
-			qrMatrix[MATRIX_SIZE - 1 - i][8] = (formatBits >> (8 + i)) & 1; // Vertical part
+			qrMatrix[MATRIX_SIZE - 1 - i][8] = (formatBits >> (i + 8)) & 1; // Vertical near bottom-left
 		}
 	}
 
@@ -291,8 +293,8 @@ public class QRGenerator {
 			}
 		}
 
-		// Combine the format bits with the calculated BCH code
-		return (formatBits << 10) | formatBitsShifted;
+		// Combine the original format bits with the calculated 10-bit BCH code
+		return (formatBits << 10) | (formatBitsShifted & 0x3FF); // Mask with 10-bit BCH
 	}
 
 	static final boolean shouldFlipBit(int maskPattern, int row, int col) {
@@ -331,11 +333,11 @@ public class QRGenerator {
 
 	static final int[][] applyMask(int[][] qrMatrix) {
 		// TODO perform mask evaluation
-		int maskPattern = 7;
-		
+		int maskPattern = 0;
+
 		int[][] appliedMask = applyMask(maskPattern, qrMatrix, QRGenerator::isReservedArea);
 		addErrorCorrectionAndMaskInfo(0, maskPattern, appliedMask);
-		
+
 		return appliedMask;
 	}
 
@@ -344,52 +346,56 @@ public class QRGenerator {
 		int bitIndex = 7; // Start with the highest bit (byte) for finalData
 		int finalDataLength = finalData.length;
 		int[][] qrMatrix = new int[MATRIX_SIZE][MATRIX_SIZE];
-		// Start from the bottom-right corner of the matrix
 		for (int col = MATRIX_SIZE - 1; col >= 0; col -= 2) { // Iterate through columns (two at a time)
-			for (int row = 0; row < MATRIX_SIZE; row++) {
-				// For each column, we fill two rows at a time
-				// Check if we are in a reserved area
-				if (isReservedArea(row, col))
-					continue; // Skip reserved areas
+			int otherCol = col - 1;
+			if (isColumnDirectionDown(col, otherCol)) {
+				for (int row = MATRIX_SIZE - 1; row >= 0; row--) {
+					if (isReservedArea(row, otherCol))
+						continue; // Skip reserved areas
 
-				// Place bit if there is still data
-				if (dataIndex < finalDataLength) {
-					// Get the bit from the current byte
-					byte currentByte = finalData[dataIndex];
-					int bit = (currentByte >> bitIndex) & 0x01;
-					qrMatrix[row][col] = bit; // Place the bit in the matrix
-					if (bitIndex == 0) {
-						bitIndex = 7; // Move to the next byte
-						dataIndex++; // Move to the next data byte
-					} else {
-						bitIndex--; // Move to the next bit in the byte
+					// Place bit if there is still data
+					if (dataIndex < finalDataLength) {
+						// Get the bit from the current byte
+						byte currentByte = finalData[dataIndex];
+						int bit = (currentByte >> bitIndex) & 0x01;
+						qrMatrix[row][col - 1] = bit; // Place the bit in the matrix
+						if (bitIndex == 0) {
+							bitIndex = 7; // Move to the next byte
+							dataIndex++; // Move to the next data byte
+						} else {
+							bitIndex--; // Move to the next bit in the byte
+						}
 					}
 				}
-			}
+			} else {
+				for (int row = 0; row < MATRIX_SIZE; row++) {
+					// For each column, we fill two rows at a time
+					// Check if we are in a reserved area
+					if (isReservedArea(row, col))
+						continue; // Skip reserved areas
 
-			// Change the direction for the next column
-			for (int row = MATRIX_SIZE - 1; row >= 0; row--) {
-				// Check if we are in a reserved area
-				if (isReservedArea(row, col - 1) || col == 0)
-					continue; // Skip reserved areas
-
-				// Place bit if there is still data
-				if (dataIndex < finalDataLength) {
-					// Get the bit from the current byte
-					byte currentByte2 = finalData[dataIndex];
-					int bit = (currentByte2 >> bitIndex) & 0x01;
-					qrMatrix[row][col - 1] = bit; // Place the bit in the matrix
-					if (bitIndex == 0) {
-						bitIndex = 7; // Move to the next byte
-						dataIndex++; // Move to the next data byte
-					} else {
-						bitIndex--; // Move to the next bit in the byte
+					// Place bit if there is still data
+					if (dataIndex < finalDataLength) {
+						// Get the bit from the current byte
+						byte currentByte = finalData[dataIndex];
+						int bit = (currentByte >> bitIndex) & 0x01;
+						qrMatrix[row][col] = bit; // Place the bit in the matrix
+						if (bitIndex == 0) {
+							bitIndex = 7; // Move to the next byte
+							dataIndex++; // Move to the next data byte
+						} else {
+							bitIndex--; // Move to the next bit in the byte
+						}
 					}
 				}
 			}
 		}
 		fillReservedAreas(qrMatrix);
 		return qrMatrix;
+	}
+
+	static boolean isColumnDirectionDown(int col, int otherCol) {
+		return (col < 6) ? ((col / 2 + 1) % 2 == 1) : ((otherCol / 2 + 1) % 2 == 1);
 	}
 
 	static final void fillReservedAreas(int[][] qrMatrix) {
