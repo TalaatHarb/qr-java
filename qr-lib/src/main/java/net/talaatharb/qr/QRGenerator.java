@@ -276,11 +276,15 @@ public class QRGenerator {
 		int formatBits = (ecBits << 3) | maskPattern;
 
 		// Apply error correction to the format bits (BCH(15, 5))
-		return applyBCHCorrection(formatBits);
+		int bchCorrected = applyBCHCorrection(formatBits);
+		// XOR with the mask pattern for format information
+	    int formatMask = 0b101010000010010;
+	    return bchCorrected ^ formatMask;
 	}
 
 	static final int applyBCHCorrection(int formatBits) {
 		// The generator polynomial for the format info error correction (BCH code)
+		//                101010000010010
 		int generator = 0b10100110111;
 
 		// Left-shift formatBits to make space for the 10-bit BCH code
@@ -354,11 +358,11 @@ public class QRGenerator {
 						continue; // Skip reserved areas
 
 					// Place bit if there is still data
-					if (dataIndex < finalDataLength) {
+					if (dataIndex < finalDataLength && otherCol >= 0) {
 						// Get the bit from the current byte
 						byte currentByte = finalData[dataIndex];
 						int bit = (currentByte >> bitIndex) & 0x01;
-						qrMatrix[row][col - 1] = bit; // Place the bit in the matrix
+						qrMatrix[row][otherCol] = bit; // Place the bit in the matrix
 						if (bitIndex == 0) {
 							bitIndex = 7; // Move to the next byte
 							dataIndex++; // Move to the next data byte
