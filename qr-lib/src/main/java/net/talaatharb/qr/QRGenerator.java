@@ -12,7 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 @NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class QRGenerator {
 
-	static final int DATABITS_SIZE = 19;
+	static final int CODEWORDS_SIZE_BYTES = 19;
 	static final String MODE_INDICATOR = "0010"; // Alphanumeric mode
 	static final Integer CODE_WORD_COUNT = 7; // L
 	static final int MATRIX_SIZE = 21; // 21x21 for Version 1
@@ -42,12 +42,17 @@ public class QRGenerator {
 	static byte[] calculateFinalData(String text) {
 		var encodedData = encodeAlphanumeric(text);
 		var dataBits = dataBits(encodedData);
-		var paddedDataBits = padDataBits(dataBits, encodedData.length(), DATABITS_SIZE);
+		int lengthInBits = encodedData.length();
+		var paddedDataBits = padDataBits(dataBits, lengthInBits, CODEWORDS_SIZE_BYTES);
 		return addErrorCorrection(paddedDataBits);
 	}
 
 	static final boolean isValidInput(String text) {
-		return text != null && text.length() < 25 && text.length() > 0;
+    	if (text == null || text.isEmpty() || text.length() > 25) return false;
+    	for (char c : text.toUpperCase().toCharArray()) {
+    	    if (!charToValueMap.containsKey(c)) return false;
+    	}
+    	return true;
 	}
 
 	static final String encodeAlphanumeric(String text) {
@@ -56,10 +61,10 @@ public class QRGenerator {
 		// Start with mode indicator for alphanumeric (0010)
 		encoded.append(MODE_INDICATOR);
 
-		// Append character count indicator (10 bits for character count)
+		// Append character count indicator (9 bits for character count)
 		int length = text.length();
 		String input = text.toUpperCase();
-		String charCountIndicator = String.format("%09d", Integer.parseInt(Integer.toBinaryString(length)));
+		String charCountIndicator = String.format("%9s", Integer.toBinaryString(length)).replace(' ', '0');
 		encoded.append(charCountIndicator);
 
 		// Encode the data
@@ -67,12 +72,12 @@ public class QRGenerator {
 			if (i + 1 < length) {
 				// Two characters to encode
 				int value = (charToValueMap.get(input.charAt(i)) * 45) + charToValueMap.get(input.charAt(i + 1));
-				String encodedValue = String.format("%011d", Long.parseLong(Integer.toBinaryString(value)));
+				String encodedValue = String.format("%11s", Integer.toBinaryString(value)).replace(' ', '0');
 				encoded.append(encodedValue);
 			} else {
 				// Last character (odd case)
 				int value = charToValueMap.get(input.charAt(i));
-				String encodedValue = String.format("%06d", Integer.parseInt(Integer.toBinaryString(value)));
+				String encodedValue = String.format("%6s", Integer.toBinaryString(value)).replace(' ', '0');
 				encoded.append(encodedValue);
 			}
 		}
@@ -98,41 +103,33 @@ public class QRGenerator {
 		return ReedSolomon.generateErrorCorrectionCodewords(data, numCodewords);
 	}
 
-	static final byte[] padDataBits(byte[] dataBits, int currentDataBitsLength, int maxDataBytes) {
+	static final byte[] padDataBits(byte[] dataBits, int currentDataBitsLengthInBits, int maxDataBytes) {
 		int totalDataBitsRequired = maxDataBytes * 8;
 
-		// Step 1: Add a 4-bit terminator (0000)
-		int remainingBits = totalDataBitsRequired - currentDataBitsLength;
+		// Step 1: Add a 4-bit terminator
+		int remainingBits = totalDataBitsRequired - currentDataBitsLengthInBits;
 		if (remainingBits > 0) {
-			// Add a 4-bit terminator if space allows
-			if (remainingBits >= 4) {
-				// Add the 4-bit terminator (0000)
-				dataBits = appendBits(dataBits, currentDataBitsLength, 0, 4);
-				currentDataBitsLength += 4;
-				remainingBits -= 4;
-			} else {
-				// Add fewer bits if space is less than 4
-				dataBits = appendBits(dataBits, 0, currentDataBitsLength, remainingBits);
-				currentDataBitsLength += remainingBits;
-				remainingBits = 0;
-			}
+			int terminatorBits = Math.min(4, remainingBits);
+			dataBits = appendBits(dataBits, currentDataBitsLengthInBits, 0, terminatorBits);
+			currentDataBitsLengthInBits += terminatorBits;
+			remainingBits -= terminatorBits;
 		}
 
-		// Step 2: Pad to the next byte boundary with zeros if necessary
-		int bitRemainder = currentDataBitsLength % 8;
-		if (bitRemainder > 0 && remainingBits > 0) {
+		// Step 2: Pad to next byte boundary
+		int bitRemainder = currentDataBitsLengthInBits % 8;
+		if (bitRemainder > 0) {
 			int bitsToNextByte = 8 - bitRemainder;
-			dataBits = appendBits(dataBits, currentDataBitsLength, 0, Math.min(bitsToNextByte, remainingBits));
+			dataBits = appendBits(dataBits, currentDataBitsLengthInBits, 0, bitsToNextByte);
+			currentDataBitsLengthInBits += bitsToNextByte;
+			remainingBits -= bitsToNextByte;
 		}
 
-		// Step 3: Alternate between padding bytes 11101100 (0xEC) and 00010001 (0x11)
+		// Step 3: Add pad bytes alternately 0xEC and 0x11
 		boolean toggle = true;
-		while (dataBits.length < maxDataBytes) {
-			if (toggle) {
-				dataBits = appendByte(dataBits, 0xEC); // 11101100
-			} else {
-				dataBits = appendByte(dataBits, 0x11); // 00010001
-			}
+		while (currentDataBitsLengthInBits < totalDataBitsRequired) {
+			int padValue = toggle ? 0xEC : 0x11;
+			dataBits = appendBits(dataBits, currentDataBitsLengthInBits, padValue, 8);
+			currentDataBitsLengthInBits += 8;
 			toggle = !toggle;
 		}
 
@@ -192,14 +189,18 @@ public class QRGenerator {
 	}
 
 	static final boolean isReservedArea(int row, int col) {
-		return ((row >= 0 && row <= 7 && col >= 0 && col <= 7) || // Top-left
-				(row >= 0 && row <= 7 && col >= MATRIX_SIZE - 8) || // Top-right
-				(row >= MATRIX_SIZE - 8 && row < MATRIX_SIZE && col >= 0 && col <= 7) || // Bottom-left
-				(row == 6 && col >= 8 && col < MATRIX_SIZE - 8) || // Horizontal timing
-				(col == 6 && row >= 8 && row < MATRIX_SIZE - 8) || // Vertical timing
-				(row == 8 && (col <= 7 || col >= 12)) || // Horizontal format info
-				(col == 8 && (row <= 7 || row >= 12)) // Vertical format info
-		);
+		// Finder patterns
+		if ((row <= 8 && col <= 8) ||
+				(row <= 8 && col >= MATRIX_SIZE - 9) ||
+				(row >= MATRIX_SIZE - 9 && col <= 8)) {
+			return true;
+		}
+
+		// Timing patterns
+		if (row == 6 || col == 6)
+			return true;
+
+		return false;
 	}
 
 	static final int[][] applyMask(int maskPattern, int[][] qrMatrix, BiPredicate<Integer, Integer> isReserved) {
@@ -215,6 +216,8 @@ public class QRGenerator {
 
 				if (shouldFlipBit(maskPattern, row, col)) {
 					appliedMask[row][col] = qrMatrix[row][col] == 1 ? 0 : 1;
+				} else {
+					appliedMask[row][col] = qrMatrix[row][col];
 				}
 			}
 		}
@@ -256,20 +259,20 @@ public class QRGenerator {
 		// Error correction levels: L = 01, M = 00, Q = 11, H = 10
 		int ecBits;
 		switch (errorCorrectionLevel) {
-		case 0:
-			ecBits = 0b01;
-			break; // L
-		case 1:
-			ecBits = 0b00;
-			break; // M
-		case 2:
-			ecBits = 0b11;
-			break; // Q
-		case 3:
-			ecBits = 0b10;
-			break; // H
-		default:
-			throw new IllegalArgumentException("Invalid error correction level");
+			case 0:
+				ecBits = 0b01;
+				break; // L
+			case 1:
+				ecBits = 0b00;
+				break; // M
+			case 2:
+				ecBits = 0b11;
+				break; // Q
+			case 3:
+				ecBits = 0b10;
+				break; // H
+			default:
+				throw new IllegalArgumentException("Invalid error correction level");
 		}
 
 		// Combine the error correction bits and mask pattern
@@ -278,13 +281,13 @@ public class QRGenerator {
 		// Apply error correction to the format bits (BCH(15, 5))
 		int bchCorrected = applyBCHCorrection(formatBits);
 		// XOR with the mask pattern for format information
-	    int formatMask = 0b101010000010010;
-	    return bchCorrected ^ formatMask;
+		int formatMask = 0b101010000010010;
+		return bchCorrected ^ formatMask;
 	}
 
 	static final int applyBCHCorrection(int formatBits) {
 		// The generator polynomial for the format info error correction (BCH code)
-		//                101010000010010
+		// 101010000010010
 		int generator = 0b10100110111;
 
 		// Left-shift formatBits to make space for the 10-bit BCH code
@@ -305,32 +308,32 @@ public class QRGenerator {
 		boolean shouldFlip = false;
 
 		switch (maskPattern) {
-		case 0:
-			shouldFlip = (row + col) % 2 == 0;
-			break;
-		case 1:
-			shouldFlip = row % 2 == 0;
-			break;
-		case 2:
-			shouldFlip = col % 3 == 0;
-			break;
-		case 3:
-			shouldFlip = (row + col) % 3 == 0;
-			break;
-		case 4:
-			shouldFlip = (row / 2 + col / 3) % 2 == 0;
-			break;
-		case 5:
-			shouldFlip = ((row * col) % 2 + (row * col) % 3) == 0;
-			break;
-		case 6:
-			shouldFlip = (((row * col) % 2) + ((row * col) % 3)) % 2 == 0;
-			break;
-		case 7:
-			shouldFlip = (((row + col) % 2) + ((row * col) % 3)) % 2 == 0;
-			break;
-		default:
-			break;
+			case 0:
+				shouldFlip = (row + col) % 2 == 0;
+				break;
+			case 1:
+				shouldFlip = row % 2 == 0;
+				break;
+			case 2:
+				shouldFlip = col % 3 == 0;
+				break;
+			case 3:
+				shouldFlip = (row + col) % 3 == 0;
+				break;
+			case 4:
+				shouldFlip = (row / 2 + col / 3) % 2 == 0;
+				break;
+			case 5:
+				shouldFlip = ((row * col) % 2 + (row * col) % 3) == 0;
+				break;
+			case 6:
+				shouldFlip = (((row * col) % 2) + ((row * col) % 3)) % 2 == 0;
+				break;
+			case 7:
+				shouldFlip = (((row + col) % 2) + ((row * col) % 3)) % 2 == 0;
+				break;
+			default:
+				break;
 		}
 		return shouldFlip;
 	}
@@ -346,54 +349,40 @@ public class QRGenerator {
 	}
 
 	static final int[][] placeDataInMatrix(byte[] finalData) {
-		int dataIndex = 0; // Index for the current data bit
-		int bitIndex = 7; // Start with the highest bit (byte) for finalData
-		int finalDataLength = finalData.length;
+		int dataIndex = 0;
+		int bitIndex = 7;
 		int[][] qrMatrix = new int[MATRIX_SIZE][MATRIX_SIZE];
-		for (int col = MATRIX_SIZE - 1; col >= 0; col -= 2) { // Iterate through columns (two at a time)
-			int otherCol = col - 1;
-			if (isColumnDirectionDown(col, otherCol)) {
-				for (int row = MATRIX_SIZE - 1; row >= 0; row--) {
-					if (isReservedArea(row, otherCol))
-						continue; // Skip reserved areas
 
-					// Place bit if there is still data
-					if (dataIndex < finalDataLength && otherCol >= 0) {
-						// Get the bit from the current byte
-						byte currentByte = finalData[dataIndex];
-						int bit = (currentByte >> bitIndex) & 0x01;
-						qrMatrix[row][otherCol] = bit; // Place the bit in the matrix
-						if (bitIndex == 0) {
-							bitIndex = 7; // Move to the next byte
-							dataIndex++; // Move to the next data byte
-						} else {
-							bitIndex--; // Move to the next bit in the byte
-						}
-					}
-				}
-			} else {
-				for (int row = 0; row < MATRIX_SIZE; row++) {
-					// For each column, we fill two rows at a time
-					// Check if we are in a reserved area
-					if (isReservedArea(row, col))
-						continue; // Skip reserved areas
+		int col = MATRIX_SIZE - 1;
+		boolean goingUp = true;
 
-					// Place bit if there is still data
-					if (dataIndex < finalDataLength) {
-						// Get the bit from the current byte
-						byte currentByte = finalData[dataIndex];
-						int bit = (currentByte >> bitIndex) & 0x01;
-						qrMatrix[row][col] = bit; // Place the bit in the matrix
-						if (bitIndex == 0) {
-							bitIndex = 7; // Move to the next byte
-							dataIndex++; // Move to the next data byte
-						} else {
-							bitIndex--; // Move to the next bit in the byte
+		while (col > 0) {
+			if (col == 6)
+				col--; // Skip vertical timing column
+
+			for (int i = 0; i < MATRIX_SIZE; i++) {
+				int row = goingUp ? (MATRIX_SIZE - 1 - i) : i;
+
+				for (int c = 0; c < 2; c++) {
+					int actualCol = col - c;
+					if (isReservedArea(row, actualCol))
+						continue;
+
+					if (dataIndex < finalData.length) {
+						int bit = (finalData[dataIndex] >> bitIndex) & 1;
+						qrMatrix[row][actualCol] = bit;
+						if (--bitIndex < 0) {
+							bitIndex = 7;
+							dataIndex++;
 						}
 					}
 				}
 			}
+
+			col -= 2;
+			goingUp = !goingUp;
 		}
+
 		fillReservedAreas(qrMatrix);
 		return qrMatrix;
 	}
@@ -411,22 +400,38 @@ public class QRGenerator {
 	}
 
 	static final void fillFinderPattern(int startRow, int startCol, int[][] qrMatrix) {
-		// Add a white border around the 7x7 finder pattern (4-module-wide quiet zone)
-		for (int row = -4; row < 11; row++) {
-			for (int col = -4; col < 11; col++) {
-				int r = startRow + row;
-				int c = startCol + col;
-				if (isInBounds(r, c)) {
-					if (isPartOfFinderPattern(row, col)) {
-						qrMatrix[r][c] = isInsideFinderPattern(row, col) ? 1 : 0;
-					} else {
-						// Outside the 7x7 area (quiet zone) -> White border
-						qrMatrix[r][c] = 0;
-					}
+		// Draw the 7×7 finder pattern
+		for (int r = 0; r < 7; r++) {
+			for (int c = 0; c < 7; c++) {
+				int globalR = startRow + r;
+				int globalC = startCol + c;
+				if (!isInBounds(globalR, globalC))
+					continue;
+
+				if (r == 0 || r == 6 || c == 0 || c == 6) {
+					qrMatrix[globalR][globalC] = 1; // Outer black square
+				} else if (r >= 2 && r <= 4 && c >= 2 && c <= 4) {
+					qrMatrix[globalR][globalC] = 1; // Inner black square
+				} else {
+					qrMatrix[globalR][globalC] = 0; // White space inside finder
 				}
 			}
 		}
 
+		// Add 1-module white separator around finder (inside matrix only)
+		for (int r = -1; r <= 7; r++) {
+			for (int c = -1; c <= 7; c++) {
+				int globalR = startRow + r;
+				int globalC = startCol + c;
+				if (!isInBounds(globalR, globalC))
+					continue;
+
+				// Outside the 7×7 area
+				if (r < 0 || r > 6 || c < 0 || c > 6) {
+					qrMatrix[globalR][globalC] = 0;
+				}
+			}
+		}
 	}
 
 	static boolean isPartOfFinderPattern(int row, int col) {

@@ -38,7 +38,7 @@ class QRGeneratorTest {
 				(byte) 77, (byte) 67, (byte) 64, (byte) 236, (byte) 17, (byte) 236, (byte) 17, (byte) 236, (byte) 17,
 				(byte) 236, (byte) 17, (byte) 236 };
 
-		var result = QRGenerator.padDataBits(dataBits, 74, QRGenerator.DATABITS_SIZE);
+		var result = QRGenerator.padDataBits(dataBits, 74, QRGenerator.CODEWORDS_SIZE_BYTES);
 
 		assertArrayEquals(expected, result);
 	}
